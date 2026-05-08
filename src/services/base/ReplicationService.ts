@@ -128,7 +128,7 @@ export abstract class ReplicationService<T extends ServiceContext = ServiceConte
         }
 
         if (!this.APIService.isOnline) {
-            this.showError("Network is offline", showMessage ? LOG_LEVEL_NOTICE : LOG_LEVEL_INFO);
+            this.showError(`${MARK_LOG_NETWORK_ERROR}Network is offline`, showMessage ? LOG_LEVEL_NOTICE : LOG_LEVEL_INFO);
             return false;
         }
         if (!(await this.onBeforeReplicate(showMessage))) {
