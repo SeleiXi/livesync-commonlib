@@ -266,11 +266,19 @@ describe("ConflictManager", () => {
             unused(leftResult);
 
             // Create right (conflicting) version
-            const rightDoc = {
-                ...createTestDoc(path, rightData, 2100),
-                _rev: baseResult.rev.split("-")[0] + "-conflict",
-            };
-            await db.put(rightDoc, { force: true } as any);
+            await (db.bulkDocs as any)(
+                [
+                    {
+                        ...createTestDoc(path, rightData, 2100),
+                        _rev: "2-000000rightleaf",
+                        _revisions: {
+                            start: 2,
+                            ids: ["000000rightleaf", revHash(baseResult.rev)],
+                        },
+                    },
+                ],
+                { new_edits: false }
+            );
 
             const currentDoc = await db.get(path, { conflicts: true });
             const conflictedRev = currentDoc._conflicts?.[0] || "";
@@ -288,7 +296,7 @@ describe("ConflictManager", () => {
             }
         });
 
-        it("should return false for conflicting changes on same line", async () => {
+        it("should concatenate conflicting changes on the same line", async () => {
             const path = "test-doc" as FilePathWithPrefix;
             const baseData = "line1\nline2\nline3\n";
             const leftData = "line1\nline2 left\nline3\n";
@@ -303,6 +311,48 @@ describe("ConflictManager", () => {
             const leftResult = await db.put(leftDoc);
             unused(leftResult);
             // Create right (conflicting) version
+            await (db.bulkDocs as any)(
+                [
+                    {
+                        ...createTestDoc(path, rightData, 2100),
+                        _rev: "2-000000rightleaf",
+                        _revisions: {
+                            start: 2,
+                            ids: ["000000rightleaf", revHash(baseResult.rev)],
+                        },
+                    },
+                ],
+                { new_edits: false }
+            );
+
+            const currentDoc = await db.get(path, { conflicts: true });
+            const conflictedRev = currentDoc._conflicts?.[0] || "";
+
+            const result = await conflictManager.mergeSensibly(path, baseResult.rev, currentDoc._rev, conflictedRev);
+
+            expect(result).not.toBe(false);
+            if (result !== false) {
+                const mergedText = result
+                    .filter((e) => e[0] !== -1)
+                    .map((e) => e[1])
+                    .join("");
+                expect(mergedText).toBe("line1\nline2 left\nline2 right\nline3\n");
+            }
+        });
+
+        it("should preserve a manual delete when the other side leaves the line unchanged", async () => {
+            const path = "test-doc" as FilePathWithPrefix;
+            const baseData = "line1\nline2\nline3\n";
+            const leftData = "line1\nline3\n";
+            const rightData = baseData;
+
+            const baseDoc = createTestDoc(path, baseData, 1000);
+            const baseResult = await db.put(baseDoc);
+
+            const leftDoc = { ...createTestDoc(path, leftData, 2000), _rev: baseResult.rev };
+            const leftResult = await db.put(leftDoc);
+            unused(leftResult);
+
             const rightDoc = {
                 ...createTestDoc(path, rightData, 2100),
                 _rev: baseResult.rev.split("-")[0] + "-conflict",
@@ -314,8 +364,14 @@ describe("ConflictManager", () => {
 
             const result = await conflictManager.mergeSensibly(path, baseResult.rev, currentDoc._rev, conflictedRev);
 
-            // Should not be able to auto-merge conflicting changes
-            expect(result).toBe(false);
+            expect(result).not.toBe(false);
+            if (result !== false) {
+                const mergedText = result
+                    .filter((e) => e[0] !== -1)
+                    .map((e) => e[1])
+                    .join("");
+                expect(mergedText).toBe(leftData);
+            }
         });
 
         it("should merge when both sides add the same line", async () => {
@@ -600,11 +656,19 @@ describe("ConflictManager", () => {
             await db.put(leftDoc);
 
             // Create right (conflicting) version
-            const rightDoc = {
-                ...createTestDoc(path, rightData, 2100),
-                _rev: baseResult.rev.split("-")[0] + "-conflict",
-            };
-            await db.put(rightDoc, { force: true } as any);
+            await (db.bulkDocs as any)(
+                [
+                    {
+                        ...createTestDoc(path, rightData, 2100),
+                        _rev: "2-000000rightleaf",
+                        _revisions: {
+                            start: 2,
+                            ids: ["000000rightleaf", revHash(baseResult.rev)],
+                        },
+                    },
+                ],
+                { new_edits: false }
+            );
 
             const result = await conflictManager.tryAutoMerge(path, true);
 
@@ -618,10 +682,10 @@ describe("ConflictManager", () => {
         });
 
         it("should return UserActionRequired when auto-merge fails", async () => {
-            const path = "test.md" as FilePathWithPrefix;
-            const baseData = "line1\nline2\n";
-            const leftData = "line1 left\nline2\n";
-            const rightData = "line1 right\nline2\n";
+            const path = "test.json" as FilePathWithPrefix;
+            const baseData = JSON.stringify({ key: "base" });
+            const leftData = JSON.stringify({ key: "left" });
+            const rightData = JSON.stringify({ key: "right" });
 
             // Create base document
             const baseDoc = createTestDoc(path, baseData, 1000);
@@ -632,17 +696,61 @@ describe("ConflictManager", () => {
             await db.put(leftDoc);
 
             // Create right (conflicting) version
-            const rightDoc = {
-                ...createTestDoc(path, rightData, 2100),
-                _rev: baseResult.rev.split("-")[0] + "-conflict",
-            };
-            await db.put(rightDoc, { force: true } as any);
+            await (db.bulkDocs as any)(
+                [
+                    {
+                        ...createTestDoc(path, rightData, 2100),
+                        _rev: "2-000000rightleaf",
+                        _revisions: {
+                            start: 2,
+                            ids: ["000000rightleaf", revHash(baseResult.rev)],
+                        },
+                    },
+                ],
+                { new_edits: false }
+            );
 
             const result = await conflictManager.tryAutoMerge(path, true);
 
-            // Should return UserActionRequired because changes conflict
+            // Should return UserActionRequired because object changes conflict on the same key
             expect(result).toHaveProperty("leftRev");
             expect(result).toHaveProperty("rightRev");
+        });
+
+        it("should auto-merge markdown conflicts by preserving both replacements", async () => {
+            const path = "test.md" as FilePathWithPrefix;
+            const baseData = "line1\nline2\nline3\n";
+            const leftData = "line1\nline2 left\nline3\n";
+            const rightData = "line1\nline2 right\nline3\n";
+
+            const baseDoc = createTestDoc(path, baseData, 1000);
+            const baseResult = await db.put(baseDoc);
+
+            const leftDoc = { ...createTestDoc(path, leftData, 2000), _rev: baseResult.rev };
+            await db.put(leftDoc);
+
+            await (db.bulkDocs as any)(
+                [
+                    {
+                        ...createTestDoc(path, rightData, 2100),
+                        _rev: "2-000000rightleaf",
+                        _revisions: {
+                            start: 2,
+                            ids: ["000000rightleaf", revHash(baseResult.rev)],
+                        },
+                    },
+                ],
+                { new_edits: false }
+            );
+
+            const result = await conflictManager.tryAutoMerge(path, true);
+
+            if ("result" in result) {
+                expect(result.result).toBe("line1\nline2 left\nline2 right\nline3\n");
+                expect(result.conflictedRev).toBeDefined();
+            } else {
+                expect.fail("Expected markdown conflict to be auto-merged");
+            }
         });
 
         it("should use the real common ancestor before auto-merging stale branch edits", async () => {

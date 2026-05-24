@@ -202,6 +202,15 @@ export class ConflictManager {
         let rightIdx = 0;
         let leftIdx = 0;
         const merged = [] as Diff[];
+        const appendInMtimeOrder = (leftItem: Diff, rightItem: Diff) => {
+            if (leftLeaf.mtime <= rightLeaf.mtime) {
+                merged.push(leftItem);
+                merged.push(rightItem);
+            } else {
+                merged.push(rightItem);
+                merged.push(leftItem);
+            }
+        };
         autoMerge = true;
         LOOP_MERGE: do {
             if (leftIdx >= diffLeft.length && rightIdx >= diffRight.length) {
@@ -229,9 +238,13 @@ export class ConflictManager {
                     nextRightItem[0] == DIFF_INSERT &&
                     nextLeftItem[1] != nextRightItem[1]
                 ) {
-                    //but next line looks like different
-                    autoMerge = false;
-                    break;
+                    // Both sides replaced the same base line differently.
+                    // Drop the base line and keep both replacements.
+                    merged.push(leftItem);
+                    appendInMtimeOrder(nextLeftItem, nextRightItem);
+                    leftIdx++;
+                    rightIdx++;
+                    continue;
                 } else {
                     merged.push(leftItem);
                     continue;
@@ -244,15 +257,8 @@ export class ConflictManager {
                     continue;
                 } else {
                     // sort by file date.
-                    if (leftLeaf.mtime <= rightLeaf.mtime) {
-                        merged.push(leftItem);
-                        merged.push(rightItem);
-                        continue;
-                    } else {
-                        merged.push(rightItem);
-                        merged.push(leftItem);
-                        continue;
-                    }
+                    appendInMtimeOrder(leftItem, rightItem);
+                    continue;
                 }
             }
             // when on inserting, index should be fixed again.
