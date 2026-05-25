@@ -1,12 +1,12 @@
 import { readFile } from "fs/promises";
 import { join, resolve } from "path";
-import { glob } from "glob";
+import { glob } from "tinyglobby";
 import { parse } from "yaml";
 import { objectToDotted } from "./messagelib.ts";
 
 const __dirname = import.meta.dirname;
 const targetDir = resolve(join(__dirname, "../src/common/messagesYAML/"));
-const files = (await glob(`${targetDir}/*.yaml`)).sort();
+const files = (await glob(`*.yaml`, { expandDirectories: false, absolute: true, cwd: targetDir })).sort();
 
 function flattenMessages(src: Record<string, unknown>) {
     return Object.fromEntries(
