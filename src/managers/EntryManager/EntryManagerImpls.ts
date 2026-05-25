@@ -40,6 +40,10 @@ type Managers = {
     localDatabase: PouchDB.Database<EntryDoc>;
 };
 type NecessaryManagers<T extends keyof Managers> = Pick<Managers, T>;
+type PouchRevisionMeta = {
+    _revisions?: { start: number; ids: string[] };
+    _revs_info?: { rev: string; status: string }[];
+};
 
 export async function createChunks(
     managers: NecessaryManagers<"chunkManager" | "hashManager" | "splitter">,
@@ -304,7 +308,7 @@ export async function getDBEntryMetaByPath(
                 children = obj.children;
                 type = obj.type;
             }
-            const doc: LoadedEntry & PouchDB.Core.IdMeta & PouchDB.Core.GetMeta = {
+            const doc: LoadedEntry & PouchDB.Core.IdMeta & PouchDB.Core.GetMeta & PouchRevisionMeta = {
                 data: "",
                 _id: (note as EntryDoc)._id,
                 path: path,
@@ -320,6 +324,13 @@ export async function getDBEntryMetaByPath(
                 type: type,
                 eden: "eden" in obj ? obj.eden : {},
             };
+            const revisionMeta = obj as PouchRevisionMeta;
+            if (revisionMeta._revisions) {
+                doc._revisions = revisionMeta._revisions;
+            }
+            if (revisionMeta._revs_info) {
+                doc._revs_info = revisionMeta._revs_info;
+            }
             return doc;
         }
     } catch (ex: any) {
