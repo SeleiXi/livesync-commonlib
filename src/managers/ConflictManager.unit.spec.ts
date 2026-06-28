@@ -381,6 +381,95 @@ describe("ConflictManager", () => {
                 expect(mergedText).toBe(bothData);
             }
         });
+
+        it("should not auto-merge a one-sided deletion against unchanged text", async () => {
+            const path = "test-doc" as FilePathWithPrefix;
+            const baseData = "line1\nline2 should stay reviewable\nline3\n";
+            const leftData = "line1\nline3\n";
+            const rightData = "line1\nline2 should stay reviewable\nline3\nline4 added elsewhere\n";
+
+            const baseDoc = createTestDoc(path, baseData, 1000);
+            const baseResult = await db.put(baseDoc);
+
+            const leftDoc = { ...createTestDoc(path, leftData, 2000), _rev: baseResult.rev };
+            const leftResult = await db.put(leftDoc);
+            unused(leftResult);
+
+            const rightDoc = {
+                ...createTestDoc(path, rightData, 2100),
+                _rev: baseResult.rev.split("-")[0] + "-conflict",
+            };
+            await db.put(rightDoc, { force: true } as any);
+
+            const currentDoc = await db.get(path, { conflicts: true });
+            const conflictedRev = currentDoc._conflicts?.[0] || "";
+
+            const result = await conflictManager.mergeSensibly(path, baseResult.rev, currentDoc._rev, conflictedRev);
+
+            expect(result).toBe(false);
+        });
+
+        it("should still auto-merge one-sided insertions in different locations", async () => {
+            const path = "test-doc" as FilePathWithPrefix;
+            const baseData = "line1\nline3\n";
+            const leftData = "line1\nline2 added left\nline3\n";
+            const rightData = "line1\nline3\nline4 added right\n";
+
+            const baseDoc = createTestDoc(path, baseData, 1000);
+            const baseResult = await db.put(baseDoc);
+
+            const leftDoc = { ...createTestDoc(path, leftData, 2000), _rev: baseResult.rev };
+            const leftResult = await db.put(leftDoc);
+            unused(leftResult);
+
+            const rightDoc = {
+                ...createTestDoc(path, rightData, 2100),
+                _rev: baseResult.rev.split("-")[0] + "-conflict",
+            };
+            await db.put(rightDoc, { force: true } as any);
+
+            const currentDoc = await db.get(path, { conflicts: true });
+            const conflictedRev = currentDoc._conflicts?.[0] || "";
+
+            const result = await conflictManager.mergeSensibly(path, baseResult.rev, currentDoc._rev, conflictedRev);
+
+            expect(result).not.toBe(false);
+            if (result !== false) {
+                const mergedText = result
+                    .filter((e) => e[0] !== -1)
+                    .map((e) => e[1])
+                    .join("");
+                expect(mergedText).toContain("line2 added left");
+                expect(mergedText).toContain("line4 added right");
+            }
+        });
+
+        it("should not auto-merge different insertions at the same location", async () => {
+            const path = "test-doc" as FilePathWithPrefix;
+            const baseData = "line1\nline4\n";
+            const leftData = "line1\nline2 added left\nline4\n";
+            const rightData = "line1\nline3 added right\nline4\n";
+
+            const baseDoc = createTestDoc(path, baseData, 1000);
+            const baseResult = await db.put(baseDoc);
+
+            const leftDoc = { ...createTestDoc(path, leftData, 2000), _rev: baseResult.rev };
+            const leftResult = await db.put(leftDoc);
+            unused(leftResult);
+
+            const rightDoc = {
+                ...createTestDoc(path, rightData, 2100),
+                _rev: baseResult.rev.split("-")[0] + "-conflict",
+            };
+            await db.put(rightDoc, { force: true } as any);
+
+            const currentDoc = await db.get(path, { conflicts: true });
+            const conflictedRev = currentDoc._conflicts?.[0] || "";
+
+            const result = await conflictManager.mergeSensibly(path, baseResult.rev, currentDoc._rev, conflictedRev);
+
+            expect(result).toBe(false);
+        });
     });
 
     describe("mergeObject", () => {

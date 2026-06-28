@@ -190,16 +190,9 @@ export class ConflictManager {
                     merged.push(leftItem);
                     continue;
                 } else {
-                    // sort by file date.
-                    if (leftLeaf.mtime <= rightLeaf.mtime) {
-                        merged.push(leftItem);
-                        merged.push(rightItem);
-                        continue;
-                    } else {
-                        merged.push(rightItem);
-                        merged.push(leftItem);
-                        continue;
-                    }
+                    Logger(`Both revisions inserted different text at the same location`, LOG_LEVEL_VERBOSE);
+                    autoMerge = false;
+                    break LOOP_MERGE;
                 }
             }
             // when on inserting, index should be fixed again.
@@ -225,8 +218,14 @@ export class ConflictManager {
             }
             if (leftItem[0] == DIFF_DELETE) {
                 if (rightItem[0] == DIFF_EQUAL) {
-                    merged.push(leftItem);
-                    continue;
+                    const nextLeftItem = diffLeft[leftIdx] ?? [0, ""];
+                    if (nextLeftItem[0] == DIFF_INSERT) {
+                        merged.push(leftItem);
+                        continue;
+                    }
+                    Logger(`One revision deleted text that the other revision kept`, LOG_LEVEL_VERBOSE);
+                    autoMerge = false;
+                    break LOOP_MERGE;
                 } else {
                     //we cannot perform auto merge.
                     autoMerge = false;
@@ -235,8 +234,14 @@ export class ConflictManager {
             }
             if (rightItem[0] == DIFF_DELETE) {
                 if (leftItem[0] == DIFF_EQUAL) {
-                    merged.push(rightItem);
-                    continue;
+                    const nextRightItem = diffRight[rightIdx] ?? [0, ""];
+                    if (nextRightItem[0] == DIFF_INSERT) {
+                        merged.push(rightItem);
+                        continue;
+                    }
+                    Logger(`One revision deleted text that the other revision kept`, LOG_LEVEL_VERBOSE);
+                    autoMerge = false;
+                    break LOOP_MERGE;
                 } else {
                     //we cannot perform auto merge.
                     autoMerge = false;
